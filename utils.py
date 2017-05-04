@@ -1,7 +1,7 @@
+from __future__ import division
 """
 Some codes from https://github.com/Newmu/dcgan_code
 """
-from __future__ import division
 import math
 import json
 import random

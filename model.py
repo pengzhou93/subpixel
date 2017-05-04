@@ -7,7 +7,8 @@ from six.moves import xrange
 from scipy.misc import imresize
 from subpixel import PS
 
-from ops import *
+import ops
+# from ops import *
 from utils import *
 
 def doresize(x, shape):
@@ -59,48 +60,52 @@ class DCGAN(object):
 
     def build_model(self):
 
-        self.inputs = tf.placeholder(tf.float32, [self.batch_size, self.input_size, self.input_size, 3],
-                                    name='real_images')
-        try:
-            self.up_inputs = tf.image.resize_images(self.inputs, self.image_shape[0], self.image_shape[1], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        except ValueError:
-            # newer versions of tensorflow
-            self.up_inputs = tf.image.resize_images(self.inputs, [self.image_shape[0], self.image_shape[1]], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        self.inputs = tf.placeholder(tf.float32, \
+                                     [self.batch_size, self.input_size, self.input_size, 3], \
+                                     name='real_images')
+        self.up_inputs = tf.image.resize_images(self.inputs, 
+                                                [self.image_shape[0], self.image_shape[1]],
+                                                tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        self.images = tf.placeholder(tf.float32,
+                                     [self.batch_size] + self.image_shape,
+                                     name='real_images')
+        self.sample_images= tf.placeholder(tf.float32,
+                                           [self.sample_size] + self.image_shape,
+                                           name='sample_images')
 
-        self.images = tf.placeholder(tf.float32, [self.batch_size] + self.image_shape,
-                                    name='real_images')
-        self.sample_images= tf.placeholder(tf.float32, [self.sample_size] + self.image_shape,
-                                        name='sample_images')
-
+        # input : [batch, 32, 32, 3]  output : [batch, 128, 128, 3]
         self.G = self.generator(self.inputs)
 
-        self.G_sum = tf.image_summary("G", self.G)
+        self.G_sum = tf.summary.image("G", self.G)
 
         self.g_loss = tf.reduce_mean(tf.square(self.images-self.G))
 
-        self.g_loss_sum = tf.scalar_summary("g_loss", self.g_loss)
+        self.g_loss_sum = tf.summary.scalar("g_loss", self.g_loss)
 
         t_vars = tf.trainable_variables()
 
         self.g_vars = [var for var in t_vars if 'g_' in var.name]
 
-        self.saver = tf.train.Saver()
+        self.saver = tf.train.Saver(max_to_keep = 2)
 
     def train(self, config):
         """Train DCGAN"""
         # first setup validation data
-        data = sorted(glob(os.path.join("./data", config.dataset, "valid", "*.jpg")))
+        data = sorted(glob(os.path.join(config.dataset, "valid", "*.jpg")))
 
-        g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
-                          .minimize(self.g_loss, var_list=self.g_vars)
-        tf.initialize_all_variables().run()
+        g_optim = tf.train.AdamOptimizer(config.learning_rate,
+                                         beta1=config.beta1).minimize(self.g_loss,
+                                                                      var_list=self.g_vars)
+        tf.global_variables_initializer().run()
 
-        self.saver = tf.train.Saver()
-        self.g_sum = tf.merge_summary([self.G_sum, self.g_loss_sum])
-        self.writer = tf.train.SummaryWriter("./logs", self.sess.graph)
+        self.g_sum = tf.summary.merge([self.G_sum, self.g_loss_sum])
+        self.writer = tf.summary.FileWriter(config.log_dir, self.sess.graph)
 
+        # Save sample images
         sample_files = data[0:self.sample_size]
-        sample = [get_image(sample_file, self.image_size, is_crop=self.is_crop) for sample_file in sample_files]
+        sample = [get_image(sample_file, self.image_size, is_crop=self.is_crop) \
+                  for sample_file in sample_files]
+
         sample_inputs = [doresize(xx, [self.input_size,]*2) for xx in sample]
         sample_images = np.array(sample).astype(np.float32)
         sample_input_images = np.array(sample_inputs).astype(np.float32)
@@ -119,13 +124,14 @@ class DCGAN(object):
         # we only save the validation inputs once
         have_saved_inputs = False
 
-        for epoch in xrange(config.epoch):
-            data = sorted(glob(os.path.join("./data", config.dataset, "train", "*.jpg")))
+        for epoch in range(config.epoch):
+            data = sorted(glob(os.path.join(config.dataset, "train", "*.jpg")))
             batch_idxs = min(len(data), config.train_size) // config.batch_size
 
-            for idx in xrange(0, batch_idxs):
+            for idx in range(0, batch_idxs):
                 batch_files = data[idx*config.batch_size:(idx+1)*config.batch_size]
-                batch = [get_image(batch_file, self.image_size, is_crop=self.is_crop) for batch_file in batch_files]
+                batch = [get_image(batch_file, self.image_size, is_crop=self.is_crop) \
+                         for batch_file in batch_files]
                 input_batch = [doresize(xx, [self.input_size,]*2) for xx in batch]
                 batch_images = np.array(batch).astype(np.float32)
                 batch_inputs = np.array(input_batch).astype(np.float32)
@@ -140,16 +146,18 @@ class DCGAN(object):
                     % (epoch, idx, batch_idxs,
                         time.time() - start_time, errG))
 
+                # self.up_inputs : upscale images using nearest_neighbor method
+                # self.G : upscale images generated
                 if np.mod(counter, 100) == 1:
-                    samples, g_loss, up_inputs = self.sess.run(
+                    G_samples, g_loss, up_inputs = self.sess.run(
                         [self.G, self.g_loss, self.up_inputs],
                         feed_dict={self.inputs: sample_input_images, self.images: sample_images}
                     )
                     if not have_saved_inputs:
-                        save_images(up_inputs, [8, 8], './samples/inputs.png')
+                        save_images(up_inputs, [8, 8], './samples/nn_up_inputs.png')
                         have_saved_inputs = True
-                    save_images(samples, [8, 8],
-                                './samples/valid_%s_%s.png' % (epoch, idx))
+                    save_images(G_samples, [8, 8],
+                                './samples/G_valid_%s_%s.png' % (epoch, idx))
                     print("[Sample] g_loss: %.8f" % (g_loss))
 
                 if np.mod(counter, 500) == 2:
@@ -157,16 +165,28 @@ class DCGAN(object):
 
     def generator(self, z):
         # project `z` and reshape
-        self.h0, self.h0_w, self.h0_b = deconv2d(z, [self.batch_size, 32, 32, self.gf_dim], k_h=1, k_w=1, d_h=1, d_w=1, name='g_h0', with_w=True)
-        h0 = lrelu(self.h0)
+        self.h0, self.h0_w, self.h0_b = ops.deconv2d(z,
+                                                 [self.batch_size, 32, 32, self.gf_dim],
+                                                 k_h=1, k_w=1, d_h=1, d_w=1,
+                                                 name='g_h0',
+                                                 with_w=True)
+        h0 = ops.lrelu(self.h0)
 
-        self.h1, self.h1_w, self.h1_b = deconv2d(h0, [self.batch_size, 32, 32, self.gf_dim], name='g_h1', d_h=1, d_w=1, with_w=True)
-        h1 = lrelu(self.h1)
+        self.h1, self.h1_w, self.h1_b = ops.deconv2d(h0,
+                                                     [self.batch_size, 32, 32, self.gf_dim],
+                                                     name='g_h1',
+                                                     d_h=1, d_w=1,
+                                                     with_w=True)
+        h1 = ops.lrelu(self.h1)
 
-        h2, self.h2_w, self.h2_b = deconv2d(h1, [self.batch_size, 32, 32, 3*16], d_h=1, d_w=1, name='g_h2', with_w=True)
-        h2 = PS(h2, 4, color=True)
+        h2, self.h2_w, self.h2_b = ops.deconv2d(h1,
+                                                [self.batch_size, 32, 32, 3*16],
+                                                d_h=1, d_w=1,
+                                                name='g_h2',
+                                                with_w=True)
+        h2 = PS(h2, r = 4, color=True)
 
-        return tf.nn.tanh(h2)
+        return tf.tanh(h2)      # [-1 1]
 
     def save(self, checkpoint_dir, step):
         model_name = "DCGAN.model"

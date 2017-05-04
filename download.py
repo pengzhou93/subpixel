@@ -1,3 +1,4 @@
+from __future__ import print_function
 """
 Modification of https://github.com/stanfordnlp/treelstm/blob/master/scripts/download.py
 
@@ -6,8 +7,6 @@ Downloads the following:
 - LSUN dataset
 - MNIST dataset
 """
-
-from __future__ import print_function
 import os
 import sys
 import gzip
@@ -20,6 +19,7 @@ from six.moves import urllib
 
 parser = argparse.ArgumentParser(description='Download dataset for DCGAN.')
 parser.add_argument('--datasets', metavar='N', type=str, nargs='+',
+                    default = 'celebA',
                    help='name of dataset to download [celebA, lusn, mnist]')
 
 def download(url, dirpath):
@@ -60,22 +60,23 @@ def download_celeb_a(dirpath):
     NUM_EXAMPLES = 202599
     TRAIN_STOP = 162770
     VALID_STOP = 182637
-    data_dir = 'celebA'
-    if os.path.exists(os.path.join(dirpath, data_dir)):
-        print('Found Celeb-A - skip')
-        return
-    url = 'https://www.dropbox.com/sh/8oqt9vytwxb3s4r/AADIKlz8PR9zr6Y20qbkunrba/Img/img_align_celeba.zip?dl=1&pv=1'
-    filepath = download(url, dirpath)
-    zip_dir = ''
-    with zipfile.ZipFile(filepath) as zf:
-        zip_dir = zf.namelist()[0]
-        zf.extractall(dirpath)
-    os.remove(filepath)
+    data_dir = 'img_align_celeba'
+    # if os.path.exists(os.path.join(dirpath, data_dir)):
+    #     print('Found Celeb-A - skip')
+    #     return
+    # url = 'https://www.dropbox.com/sh/8oqt9vytwxb3s4r/AADIKlz8PR9zr6Y20qbkunrba/Img/img_align_celeba.zip?dl=1&pv=1'
+    # filepath = download(url, dirpath)
+    filepath = os.path.join(dirpath, 'img_align_celeba.zip')
+    zip_dir = data_dir
+    # with zipfile.ZipFile(filepath) as zf:
+    #     zip_dir = zf.namelist()[0]
+    #     zf.extractall(dirpath)
+    # os.remove(filepath)
 
     # now split data into train/valid/test
-    train_dir = os.path.join(dirpath, zip_dir, 'train')
-    valid_dir = os.path.join(dirpath, zip_dir, 'valid')
-    test_dir = os.path.join(dirpath, zip_dir, 'test')
+    train_dir = os.path.join(dirpath, 'train')
+    valid_dir = os.path.join(dirpath, 'valid')
+    test_dir = os.path.join(dirpath, 'test')
     if not os.path.exists(train_dir):
         os.makedirs(train_dir)
     if not os.path.exists(valid_dir):
@@ -84,6 +85,7 @@ def download_celeb_a(dirpath):
         os.makedirs(test_dir)
     zip_path = os.path.join(dirpath, zip_dir)
     for i in range(NUM_EXAMPLES):
+        print("Process [%6d/%6d]\r" % (i, NUM_EXAMPLES), end = '')
         image_filename = "{:06d}.jpg".format(i+1)
         candidate_file = os.path.join(zip_path, image_filename)
         if os.path.exists(candidate_file):
@@ -94,9 +96,12 @@ def download_celeb_a(dirpath):
             else:
                 dest_dir = test_dir
             dest_file = os.path.join(dest_dir, image_filename)
-            os.rename(candidate_file, dest_file)
+            shutil.copyfile(candidate_file, dest_file)
+            # os.rename(candidate_file, dest_file)
+        else:
+            print("\t %s doesn't exist." % candidate_file)
 
-    os.rename(os.path.join(dirpath, zip_dir), os.path.join(dirpath, data_dir))
+    # os.rename(os.path.join(dirpath, zip_dir), os.path.join(dirpath, data_dir))
 
 def _list_categories(tag):
     url = 'http://lsun.cs.princeton.edu/htbin/list.cgi?tag=' + tag
@@ -163,10 +168,10 @@ if __name__ == '__main__':
     if not args.datasets:
         raise Exception(" [!] You need to specify the name of datasets to download")
 
-    prepare_data_dir()
+    # prepare_data_dir()
 
     if 'celebA' in args.datasets:
-        download_celeb_a('./data')
+        download_celeb_a('/home/shhs/usr/data/cele')
     if 'lsun' in args.datasets:
         download_lsun('./data')
     if 'mnist' in args.datasets:
